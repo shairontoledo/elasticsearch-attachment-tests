@@ -6,7 +6,7 @@ Downloaded from
 
     bin/plugin -install elasticsearch/elasticsearch-mapper-attachments/1.0.0
     
-Or add 0.17.6 to pom.xml
+Or add 0.17.6 to `pom.xml`
 
     <dependency>
       <groupId>org.elasticsearch</groupId>
