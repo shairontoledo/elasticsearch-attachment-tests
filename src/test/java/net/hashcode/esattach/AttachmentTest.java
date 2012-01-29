@@ -30,70 +30,77 @@ public class AttachmentTest {
   @BeforeClass
   public void setupNode() {
     node = nodeBuilder().local(true).node();
+    //uncomment this client if you want to use an ES already running 
+    //client = new TransportClient().addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
     client = node.client();
   }
 
   @Test
-  public void testSimpleMappings() throws Exception {
-    String idxName = "msdocs";
-    String attachFiled = "attachment";
+  public void mapperAttachmentTest() throws Exception {
+    String idxName = "test";
+    String idxType = "attachment";
     XContentBuilder map = jsonBuilder().startObject()
-            .startObject("properties").startObject(attachFiled)
-            .field("type", "attachment")
-            .field("store", "yes")
-            .field("term_vector", "with_positions_offsets")
-            .endObject().endObject().endObject();
-
+            .startObject(idxType)
+              .startObject("properties")
+                .startObject("file")
+                  .field("type", "attachment")
+                  .startObject("fields")
+                    .startObject("title")
+                      .field("store", "yes")
+                    .endObject()
+                    .startObject("file")
+                      .field("term_vector","with_positions_offsets")
+                      .field("store","yes")
+                    .endObject()
+                  .endObject()
+                .endObject()
+              .endObject()
+         .endObject();
     try {
       client.admin().indices().prepareDelete(idxName).execute().actionGet();
-    } catch (Exception ex) {
-    }
+    } catch (Exception ex) {}
 
     log.info("create index and mapping");
     CreateIndexResponse resp = client.admin().indices().prepareCreate(idxName).setSettings(
             ImmutableSettings.settingsBuilder()
             .put("number_of_shards", 1)
             .put("index.numberOfReplicas", 1))
-            .addMapping("doc", map).execute().actionGet();
-
+            .addMapping("attachment", map).execute().actionGet();
     assertThat(resp.acknowledged(), equalTo(true));
 
-    String pdfPath = ClassLoader.getSystemResource("es_doc_test.pdf").getPath();
-
+    String pdfPath = ClassLoader.getSystemResource("fn6742.pdf").getPath();
     log.info("MD5: original file ");
-    assertThat(DigestUtils.md5Hex(new FileInputStream(pdfPath)), equalTo("d606145e589ff30c348a0ffd2a45ae3f"));
+    assertThat(DigestUtils.md5Hex(new FileInputStream(pdfPath)), equalTo("66ffff795be61474c7b611a70b72a7f2"));
 
     String data64 = org.elasticsearch.common.Base64.encodeFromFile(pdfPath);
-
     log.info("MD5: encoded file ");
-    assertThat(DigestUtils.md5Hex(data64), equalTo("63dc6a1cdfdf390110555293793b0ddb"));
+    assertThat(DigestUtils.md5Hex(data64), equalTo("b83d178c1dbb8e6030b2aba3ad08a58b"));
 
     log.info("Indexing");
     XContentBuilder source = jsonBuilder().startObject()
-            .field("filename", "elasticsearch home.pdf")
-            .field("folder", "/foo/bar/folder")
-            .field(attachFiled, data64).endObject();
+            .field("file", data64).endObject();
 
-    IndexResponse idxResp = client.prepareIndex().setIndex(idxName).setType("doc").setId("77")
+    IndexResponse idxResp = client.prepareIndex().setIndex(idxName).setType(idxType).setId("80")
             .setSource(source).setRefresh(true).execute().actionGet();
 
-    assertThat(idxResp.id(), equalTo("77"));
-    assertThat(idxResp.type(), equalTo("doc"));
+    assertThat(idxResp.id(), equalTo("80"));
+    assertThat(idxResp.type(), equalTo(idxType));
 
-     String queryString = "elasticsearch";
+    String queryString = "amplifier";
+    
     log.info("Searching by "+queryString);
     QueryBuilder query = QueryBuilders.queryString(queryString);
 
     SearchRequestBuilder searchBuilder = client.prepareSearch().setQuery(query)
-            .addHighlightedField(attachFiled)
-            .addHighlightedField("filename");
-
+            .addField("title")
+            .addHighlightedField("file");
+            
     SearchResponse search = searchBuilder.execute().actionGet();
-    client.close();
-
     assertThat(search.hits().totalHits(), equalTo(1L));
     assertThat(search.hits().hits().length, equalTo(1));
-    assertThat(search.hits().getAt(0).highlightFields().get("filename"), notNullValue());
-    assertThat(search.hits().getAt(0).highlightFields().get(attachFiled), notNullValue());
+    assertThat(search.hits().getAt(0).highlightFields().get("file"), notNullValue());
+    assertThat(search.hits().getAt(0).highlightFields().get("file").toString(), containsString("<em>Amplifier</em>"));
+    
+    client.close();
   }
 }
